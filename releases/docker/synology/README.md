@@ -26,7 +26,7 @@ This deployment keeps **Samba-Manager** as the UI while using `ghcr.io/servercon
 1. Copy `.env.example` to `.env`
 2. Update the Synology-specific values, especially `PUID`, `PGID`, share path, and macvlan settings
 3. Create `${SAMBA_CONFIG_PATH}` and place `shares.conf` there before first start
-4. Optionally keep `smb.conf` as a reference file for the settings you want the UI to maintain after bootstrap
+4. `smb.conf` is auto-generated on first backend start; keep the sample `smb.conf` only as a reference for the settings you want the UI to maintain after bootstrap
 5. Start the test stack:
    ```bash
    docker compose --env-file .env -f docker-compose.test.yml up -d

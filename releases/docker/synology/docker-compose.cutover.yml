@@ -24,6 +24,7 @@ services:
       - ./global-stanza.common.conf:/bootstrap/global-stanza.common.conf:ro
       - ./global-stanza.cutover.conf:/bootstrap/global-stanza.cutover.conf:ro
       - ./servercontainers-entrypoint.sh:/bootstrap/servercontainers-entrypoint.sh:ro
+      # Let the backend refresh the host Avahi service file during cutover.
       - /etc/avahi/services:/external/avahi
       - ${SAMBA_SHARE_PATH}:/shares/data
       - samba-backend-state:/var/lib/samba

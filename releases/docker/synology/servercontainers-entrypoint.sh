@@ -13,14 +13,9 @@ if [ -n "${SAMBA_GLOBAL_STANZA_FILES:-}" ]; then
   IFS=:
   for stanza_file in $SAMBA_GLOBAL_STANZA_FILES; do
     [ -f "$stanza_file" ] || continue
-    stanza=$(
-      while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        eval "printf '%s;' \"$line\""
-      done <<EOF
-$(sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$stanza_file")
-EOF
-    )
+    stanza=$(sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$stanza_file")
+    stanza=$(printf '%s\n' "$stanza" | sed "s|\${SAMBA_TEST_IP}|${SAMBA_TEST_IP:-}|g")
+    stanza=$(printf '%s\n' "$stanza" | tr '\n' ';')
     if [ -n "$stanza" ]; then
       if [ -n "$SAMBA_GLOBAL_STANZA" ]; then
         SAMBA_GLOBAL_STANZA="${SAMBA_GLOBAL_STANZA}${stanza}"

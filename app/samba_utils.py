@@ -223,26 +223,24 @@ def run_configured_command(command):
             or os.path.realpath(argv[socket_index]) not in DOCKER_SOCKET_PATHS
         ):
             return False, "", "Configured curl command must target /var/run/docker.sock"
-        urls = [arg for arg in argv if arg.startswith("http://") or arg.startswith("https://")]
-        if not urls:
+        if not argv[-1].startswith("http://"):
             return False, "", "Configured curl command must target the local Docker containers API"
-        for url in urls:
-            parsed = urlparse(url)
-            if parsed.scheme != "http" or parsed.netloc != "localhost":
-                return (
-                    False,
-                    "",
-                    "Configured curl command must target the local Docker containers API",
-                )
-            path_parts = [part for part in parsed.path.split("/") if part]
-            if len(path_parts) < 2 or path_parts[0] != "containers":
-                return (
-                    False,
-                    "",
-                    "Configured curl command must target the local Docker containers API",
-                )
-            if path_parts[1] not in ALLOWED_DOCKER_CONTAINERS:
-                return False, "", f"Container '{path_parts[1]}' is not allowed"
+        parsed = urlparse(argv[-1])
+        if parsed.scheme != "http" or parsed.netloc != "localhost":
+            return (
+                False,
+                "",
+                "Configured curl command must target the local Docker containers API",
+            )
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) < 2 or path_parts[0] != "containers":
+            return (
+                False,
+                "",
+                "Configured curl command must target the local Docker containers API",
+            )
+        if path_parts[1] not in ALLOWED_DOCKER_CONTAINERS:
+            return False, "", f"Container '{path_parts[1]}' is not allowed"
         result = subprocess.run(
             argv,
             capture_output=True,
@@ -287,6 +285,8 @@ def restart_samba_service():
     """Restart Samba service with proper error handling"""
     try:
         if EXTERNAL_SAMBA_RESTART_CMD:
+            # In external mode we intentionally avoid falling back to local systemctl/service
+            # commands because that would target the wrong Samba daemon.
             print("Attempting to reload externally managed Samba service")
             success, stdout, stderr = run_configured_command(EXTERNAL_SAMBA_RESTART_CMD)
             if success:
