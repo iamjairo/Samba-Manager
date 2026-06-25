@@ -14,15 +14,15 @@ services:
       - UID_${SAMBA_USERNAME}=${PUID}
       - SAMBA_CONF_WORKGROUP=WORKGROUP
       - SAMBA_CONF_SERVER_STRING=Synology Production Samba
-      - >-
-        SAMBA_GLOBAL_STANZA=include = /etc/samba/shares.conf;
-        ${SAMBA_COMMON_GLOBAL_STANZA}
+      - SAMBA_GLOBAL_STANZA_FILES=/bootstrap/global-stanza.common.conf:/bootstrap/global-stanza.cutover.conf
       - AVAHI_NAME=${SAMBA_AVAHI_NAME:-samba-nas}
       - NETBIOS_DISABLE=1
       - WSDD2_DISABLE=1
       - TZ=${TZ:-UTC}
     volumes:
       - ${SAMBA_CONFIG_PATH:-./config}:/etc/samba
+      - ./global-stanza.common.conf:/bootstrap/global-stanza.common.conf:ro
+      - ./global-stanza.cutover.conf:/bootstrap/global-stanza.cutover.conf:ro
       - ./servercontainers-entrypoint.sh:/bootstrap/servercontainers-entrypoint.sh:ro
       - /etc/avahi/services:/external/avahi
       - ${SAMBA_SHARE_PATH}:/shares/data

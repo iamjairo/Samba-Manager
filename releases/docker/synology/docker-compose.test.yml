@@ -34,11 +34,7 @@ services:
       - UID_${SAMBA_USERNAME}=${PUID}
       - SAMBA_CONF_WORKGROUP=WORKGROUP
       - SAMBA_CONF_SERVER_STRING=Synology Test Samba
-      - >-
-        SAMBA_GLOBAL_STANZA=include = /etc/samba/shares.conf;
-        interfaces = ${SAMBA_TEST_IP}/24;
-        bind interfaces only = yes;
-        ${SAMBA_COMMON_GLOBAL_STANZA}
+      - SAMBA_GLOBAL_STANZA_FILES=/bootstrap/global-stanza.common.conf:/bootstrap/global-stanza.test.conf
       - AVAHI_NAME=${SAMBA_AVAHI_NAME:-samba-test}
       - AVAHI_DISABLE=1
       - NETBIOS_DISABLE=1
@@ -46,6 +42,8 @@ services:
       - TZ=${TZ:-UTC}
     volumes:
       - ${SAMBA_CONFIG_PATH:-./config}:/etc/samba
+      - ./global-stanza.common.conf:/bootstrap/global-stanza.common.conf:ro
+      - ./global-stanza.test.conf:/bootstrap/global-stanza.test.conf:ro
       - ./servercontainers-entrypoint.sh:/bootstrap/servercontainers-entrypoint.sh:ro
       - ${SAMBA_SHARE_PATH}:/shares/data
       - samba-backend-state:/var/lib/samba

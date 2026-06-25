@@ -4,8 +4,10 @@ import os
 import pwd
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
+from urllib.parse import urlparse
 from pathlib import Path
 
 # Use local configuration files for development
@@ -24,7 +26,19 @@ else:
 
 EXTERNAL_SAMBA_RESTART_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_RESTART_CMD", "").strip()
 EXTERNAL_SAMBA_STATUS_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_STATUS_CMD", "").strip()
-DOCKER_SOCKET_PATHS = {"/var/run/docker.sock"}
+DOCKER_SOCKET_PATHS = {os.path.realpath("/var/run/docker.sock")}
+ALLOWED_EXTERNAL_EXECUTABLES = {
+    "/usr/bin/curl",
+    "/bin/curl",
+}
+ALLOWED_DOCKER_CONTAINERS = {
+    name.strip()
+    for name in os.environ.get(
+        "SAMBA_MANAGER_ALLOWED_DOCKER_CONTAINERS", "samba-backend"
+    ).split(",")
+    if name.strip()
+}
+EXTERNAL_COMMAND_TIMEOUT = int(os.environ.get("SAMBA_MANAGER_COMMAND_TIMEOUT", "30"))
 
 
 def parse_share_section(content):
@@ -191,7 +205,11 @@ def run_configured_command(command):
         argv = shlex.split(command)
         if not argv:
             return False, "", "Configured command is empty"
-        if argv[0] not in {"curl", "/usr/bin/curl", "/bin/curl"}:
+        executable_path = shutil.which(argv[0])
+        if not executable_path:
+            return False, "", f"Configured command '{argv[0]}' was not found"
+        executable_path = os.path.realpath(executable_path)
+        if executable_path not in ALLOWED_EXTERNAL_EXECUTABLES:
             return (
                 False,
                 "",
@@ -200,17 +218,37 @@ def run_configured_command(command):
         if "--unix-socket" not in argv:
             return False, "", "Configured curl command must use --unix-socket"
         socket_index = argv.index("--unix-socket") + 1
-        if socket_index >= len(argv) or argv[socket_index] not in DOCKER_SOCKET_PATHS:
+        if (
+            socket_index >= len(argv)
+            or os.path.realpath(argv[socket_index]) not in DOCKER_SOCKET_PATHS
+        ):
             return False, "", "Configured curl command must target /var/run/docker.sock"
         urls = [arg for arg in argv if arg.startswith("http://") or arg.startswith("https://")]
-        if not urls or not all(url.startswith("http://localhost/containers/") for url in urls):
+        if not urls:
             return False, "", "Configured curl command must target the local Docker containers API"
+        for url in urls:
+            parsed = urlparse(url)
+            if parsed.scheme != "http" or parsed.netloc != "localhost":
+                return (
+                    False,
+                    "",
+                    "Configured curl command must target the local Docker containers API",
+                )
+            path_parts = [part for part in parsed.path.split("/") if part]
+            if len(path_parts) < 2 or path_parts[0] != "containers":
+                return (
+                    False,
+                    "",
+                    "Configured curl command must target the local Docker containers API",
+                )
+            if path_parts[1] not in ALLOWED_DOCKER_CONTAINERS:
+                return False, "", f"Container '{path_parts[1]}' is not allowed"
         result = subprocess.run(
             argv,
             capture_output=True,
             text=True,
             check=False,
-            timeout=30,
+            timeout=EXTERNAL_COMMAND_TIMEOUT,
         )
         return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:

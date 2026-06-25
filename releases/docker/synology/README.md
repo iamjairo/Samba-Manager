@@ -6,6 +6,9 @@ This deployment keeps **Samba-Manager** as the UI while using `ghcr.io/servercon
 
 - `docker-compose.test.yml` — non-disruptive test stack using a dedicated macvlan IP
 - `docker-compose.cutover.yml` — production cutover stack using host networking
+- `global-stanza.common.conf` — shared Samba globals for both modes
+- `global-stanza.test.conf` — test-only interface binding
+- `global-stanza.cutover.conf` — cutover-only overrides
 - `smb.conf` / `shares.conf` — starter configuration managed by Samba-Manager
 - `validate.sh` — quick validation plus manual client checklist
 - `cutover.sh` — stop Synology SMB and start the production backend
