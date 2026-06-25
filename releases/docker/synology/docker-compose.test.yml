@@ -1,0 +1,69 @@
+services:
+  samba-manager:
+    build:
+      context: ../../..
+      dockerfile: releases/docker/Dockerfile
+    container_name: samba-manager-ui
+    ports:
+      - "${SAMBA_MANAGER_PORT:-5000}:5000"
+    environment:
+      SAMBA_MANAGER_SECRET_KEY: ${SAMBA_MANAGER_SECRET_KEY:-change-me-in-production}
+      SAMBA_MANAGER_EMBEDDED_SMBD: "0"
+      # HUP reloads Samba in-place so existing sessions survive config changes from the UI.
+      SAMBA_MANAGER_SAMBA_RESTART_CMD: >-
+        curl --fail --silent --show-error --unix-socket /var/run/docker.sock
+        -X POST
+        http://localhost/containers/samba-backend/kill?signal=HUP
+      SAMBA_MANAGER_SAMBA_STATUS_CMD: >-
+        curl --fail --silent --show-error --unix-socket /var/run/docker.sock
+        http://localhost/containers/samba-backend/json
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${SAMBA_CONFIG_PATH:-./config}:/etc/samba
+      - /var/run/docker.sock:/var/run/docker.sock
+      - samba-manager-logs:/var/log/samba-manager
+      - samba-manager-users:/opt/samba-manager/data
+    restart: unless-stopped
+
+  samba-backend:
+    image: ghcr.io/servercontainers/samba:smbd-only-latest
+    container_name: samba-backend
+    entrypoint: ["/bin/sh", "/bootstrap/servercontainers-entrypoint.sh"]
+    command: ["runsvdir", "-P", "/container/config/runit"]
+    environment:
+      - ACCOUNT_${SAMBA_USERNAME}=${SAMBA_PASSWORD}
+      - UID_${SAMBA_USERNAME}=${PUID}
+      - SAMBA_CONF_WORKGROUP=WORKGROUP
+      - SAMBA_CONF_SERVER_STRING=Synology Test Samba
+      - SAMBA_GLOBAL_STANZA_FILES=/bootstrap/global-stanza.common.conf:/bootstrap/global-stanza.test.conf
+      - AVAHI_NAME=${SAMBA_AVAHI_NAME:-samba-test}
+      - AVAHI_DISABLE=1
+      - NETBIOS_DISABLE=1
+      - WSDD2_DISABLE=1
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ${SAMBA_CONFIG_PATH:-./config}:/etc/samba
+      - ./global-stanza.common.conf:/bootstrap/global-stanza.common.conf:ro
+      - ./global-stanza.test.conf:/bootstrap/global-stanza.test.conf:ro
+      - ./servercontainers-entrypoint.sh:/bootstrap/servercontainers-entrypoint.sh:ro
+      - ${SAMBA_SHARE_PATH}:/shares/data
+      - samba-backend-state:/var/lib/samba
+    restart: unless-stopped
+    networks:
+      samba-test-net:
+        ipv4_address: ${SAMBA_TEST_IP}
+
+volumes:
+  samba-manager-logs:
+  samba-manager-users:
+  samba-backend-state:
+
+networks:
+  samba-test-net:
+    driver: macvlan
+    driver_opts:
+      parent: ${SAMBA_TEST_PARENT}
+    ipam:
+      config:
+        - subnet: ${SAMBA_TEST_SUBNET}
+          gateway: ${SAMBA_TEST_GATEWAY}

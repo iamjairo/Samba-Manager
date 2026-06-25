@@ -2,6 +2,27 @@
 
 ## Common Issues and Solutions
 
+### Synology Hybrid Deployment Issues
+
+1. **Samba-Manager saves config but reload fails:**
+   - Verify the manager container has `/var/run/docker.sock` mounted
+   - Check `SAMBA_MANAGER_SAMBA_RESTART_CMD` and `SAMBA_MANAGER_SAMBA_STATUS_CMD`
+   - Confirm the backend container name is `samba-backend`
+
+2. **Test stack is unreachable from other clients:**
+   - Re-check the macvlan parent interface and test IP values in `releases/docker/synology/.env`
+   - Make sure the chosen test IP is unused on your LAN
+   - Confirm `interfaces = ${SAMBA_TEST_IP}/24` matches the assigned address
+
+3. **Backend rewrites smb.conf on container recreation:**
+   - Keep `releases/docker/synology/servercontainers-entrypoint.sh` mounted as shown in the compose files
+   - Verify `/etc/samba/smb.conf` exists in the shared config path before recreating the backend container
+
+4. **macOS Finder is still slow or missing metadata support:**
+   - Confirm `vfs objects = catia fruit streams_xattr` is still present in `/etc/samba/smb.conf`
+   - Re-run `testparm` after UI edits
+   - Check for backend storage limitations if `streams_xattr` causes problems
+
 ### Shares Not Showing Up in File Explorer
 
 1. **Check if Samba is installed and running:**

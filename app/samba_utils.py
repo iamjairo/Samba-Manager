@@ -1,10 +1,13 @@
 import grp
+import json
 import os
 import pwd
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
+from urllib.parse import urlparse
 from pathlib import Path
 
 # Use local configuration files for development
@@ -20,6 +23,22 @@ else:
     SMB_CONF = "/etc/samba/smb.conf"
     SHARE_CONF = "/etc/samba/shares.conf"
     ACTUAL_SMB_CONF = SMB_CONF
+
+EXTERNAL_SAMBA_RESTART_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_RESTART_CMD", "").strip()
+EXTERNAL_SAMBA_STATUS_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_STATUS_CMD", "").strip()
+DOCKER_SOCKET_PATHS = {os.path.realpath("/var/run/docker.sock")}
+ALLOWED_EXTERNAL_EXECUTABLES = {
+    "/usr/bin/curl",
+    "/bin/curl",
+}
+ALLOWED_DOCKER_CONTAINERS = {
+    name.strip()
+    for name in os.environ.get(
+        "SAMBA_MANAGER_ALLOWED_DOCKER_CONTAINERS", "samba-backend"
+    ).split(",")
+    if name.strip()
+}
+EXTERNAL_COMMAND_TIMEOUT = int(os.environ.get("SAMBA_MANAGER_COMMAND_TIMEOUT", "30"))
 
 
 def parse_share_section(content):
@@ -180,9 +199,104 @@ def run_command(cmd, input_str=None):
         return False, str(e)
 
 
+def run_configured_command(command):
+    """Run an administrator-provided command string."""
+    try:
+        argv = shlex.split(command)
+        if not argv:
+            return False, "", "Configured command is empty"
+        executable_path = shutil.which(argv[0])
+        if not executable_path:
+            return False, "", f"Configured command '{argv[0]}' was not found"
+        executable_path = os.path.realpath(executable_path)
+        if executable_path not in ALLOWED_EXTERNAL_EXECUTABLES:
+            return (
+                False,
+                "",
+                f"Configured command '{argv[0]}' is not allowed",
+            )
+        if "--unix-socket" not in argv:
+            return False, "", "Configured curl command must use --unix-socket"
+        socket_index = argv.index("--unix-socket") + 1
+        if (
+            socket_index >= len(argv)
+            or os.path.realpath(argv[socket_index]) not in DOCKER_SOCKET_PATHS
+        ):
+            return False, "", "Configured curl command must target /var/run/docker.sock"
+        if not argv[-1].startswith("http://"):
+            return False, "", "Configured curl command must target the local Docker containers API"
+        parsed = urlparse(argv[-1])
+        if parsed.scheme != "http" or parsed.netloc != "localhost":
+            return (
+                False,
+                "",
+                "Configured curl command must target the local Docker containers API",
+            )
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) < 2 or path_parts[0] != "containers":
+            return (
+                False,
+                "",
+                "Configured curl command must target the local Docker containers API",
+            )
+        if path_parts[1] not in ALLOWED_DOCKER_CONTAINERS:
+            return False, "", f"Container '{path_parts[1]}' is not allowed"
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=EXTERNAL_COMMAND_TIMEOUT,
+        )
+        return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, "", "Configured command timed out"
+    except Exception as e:
+        return False, "", str(e)
+
+
+def parse_external_status(stdout, success):
+    """Interpret stdout from an external status command."""
+    if not stdout:
+        return "active" if success else "inactive"
+
+    try:
+        data = json.loads(stdout)
+        if isinstance(data, dict):
+            state = data.get("State", {})
+            if isinstance(state, dict):
+                if isinstance(state.get("Running"), bool):
+                    return "active" if state["Running"] else "inactive"
+                status = state.get("Status")
+                if isinstance(status, str) and status:
+                    return status
+    except json.JSONDecodeError:
+        pass
+
+    normalized = stdout.lower()
+    if "running" in normalized or "active" in normalized:
+        return "active"
+    if "stopped" in normalized or "inactive" in normalized or "exited" in normalized:
+        return "inactive"
+    return "active" if success else "inactive"
+
+
 def restart_samba_service():
     """Restart Samba service with proper error handling"""
     try:
+        if EXTERNAL_SAMBA_RESTART_CMD:
+            # In external mode we intentionally avoid falling back to local systemctl/service
+            # commands because that would target the wrong Samba daemon.
+            print("Attempting to reload externally managed Samba service")
+            success, stdout, stderr = run_configured_command(EXTERNAL_SAMBA_RESTART_CMD)
+            if success:
+                print("Successfully reloaded externally managed Samba service")
+                if stdout:
+                    print(stdout)
+                return True
+            print(f"External Samba reload command failed: {stderr or stdout}")
+            return False
+
         # First try systemctl
         print("Attempting to restart Samba services with systemctl")
         systemctl_cmd = ["sudo", "systemctl", "restart", "smbd.service", "nmbd.service"]
@@ -233,6 +347,13 @@ def get_samba_status():
     """Get the status of the Samba service"""
     if DEV_MODE:
         return {"smbd": "active (dev)", "nmbd": "active (dev)"}
+    if EXTERNAL_SAMBA_STATUS_CMD:
+        success, stdout, stderr = run_configured_command(EXTERNAL_SAMBA_STATUS_CMD)
+        status = parse_external_status(stdout, success)
+        if not success and stderr:
+            print(f"External Samba status command failed: {stderr}")
+        label = f"external ({status})"
+        return {"smbd": label, "nmbd": "external"}
     try:
         # Try systemctl first (for systemd systems)
         smbd = subprocess.run(

@@ -1,0 +1,37 @@
+services:
+  samba-manager:
+    extends:
+      file: docker-compose.test.yml
+      service: samba-manager
+
+  samba-backend:
+    image: ghcr.io/servercontainers/samba:smbd-only-latest
+    container_name: samba-backend
+    entrypoint: ["/bin/sh", "/bootstrap/servercontainers-entrypoint.sh"]
+    command: ["runsvdir", "-P", "/container/config/runit"]
+    environment:
+      - ACCOUNT_${SAMBA_USERNAME}=${SAMBA_PASSWORD}
+      - UID_${SAMBA_USERNAME}=${PUID}
+      - SAMBA_CONF_WORKGROUP=WORKGROUP
+      - SAMBA_CONF_SERVER_STRING=Synology Production Samba
+      - SAMBA_GLOBAL_STANZA_FILES=/bootstrap/global-stanza.common.conf:/bootstrap/global-stanza.cutover.conf
+      - AVAHI_NAME=${SAMBA_AVAHI_NAME:-samba-nas}
+      - NETBIOS_DISABLE=1
+      - WSDD2_DISABLE=1
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ${SAMBA_CONFIG_PATH:-./config}:/etc/samba
+      - ./global-stanza.common.conf:/bootstrap/global-stanza.common.conf:ro
+      - ./global-stanza.cutover.conf:/bootstrap/global-stanza.cutover.conf:ro
+      - ./servercontainers-entrypoint.sh:/bootstrap/servercontainers-entrypoint.sh:ro
+      # Let the backend refresh the host Avahi service file during cutover.
+      - /etc/avahi/services:/external/avahi
+      - ${SAMBA_SHARE_PATH}:/shares/data
+      - samba-backend-state:/var/lib/samba
+    restart: unless-stopped
+    network_mode: host
+
+volumes:
+  samba-manager-logs:
+  samba-manager-users:
+  samba-backend-state:

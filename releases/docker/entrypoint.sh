@@ -10,6 +10,7 @@ echo ""
 # Environment variables
 export SAMBA_MANAGER_SECRET_KEY="${SAMBA_MANAGER_SECRET_KEY:-$(python3 -c 'import secrets; print(secrets.token_hex(32))')}"
 export FLASK_ENV="${FLASK_ENV:-production}"
+export SAMBA_MANAGER_EMBEDDED_SMBD="${SAMBA_MANAGER_EMBEDDED_SMBD:-1}"
 
 # Initialize Samba configuration if not present
 if [ ! -f /etc/samba/smb.conf ]; then
@@ -40,7 +41,13 @@ echo "✓ Environment configured"
 echo ""
 echo "Starting services..."
 echo "- Samba Manager on port 5000"
-echo "- Samba daemon (smbd)"
+if [ "$SAMBA_MANAGER_EMBEDDED_SMBD" = "1" ]; then
+    cp /etc/supervisor/conf.d/samba-manager.full.conf /etc/supervisor/conf.d/samba-manager.conf
+    echo "- Embedded Samba daemon (smbd)"
+else
+    cp /etc/supervisor/conf.d/samba-manager.ui-only.conf /etc/supervisor/conf.d/samba-manager.conf
+    echo "- External Samba backend mode"
+fi
 echo ""
 
 # Start the supervisord daemon

@@ -39,7 +39,8 @@ RUN mkdir -p /var/log/samba-manager \
 # Create supervisor configuration
 RUN mkdir -p /etc/supervisor/conf.d
 
-COPY releases/docker/supervisord.conf /etc/supervisor/conf.d/samba-manager.conf
+COPY releases/docker/supervisord.conf /etc/supervisor/conf.d/samba-manager.full.conf
+COPY releases/docker/supervisord.ui-only.conf /etc/supervisor/conf.d/samba-manager.ui-only.conf
 COPY releases/docker/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh

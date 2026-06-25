@@ -215,6 +215,10 @@ docker-compose up
 
 For more details, see the [releases/docker/](releases/docker/) directory.
 
+### Synology Hybrid Deployment
+
+If you want a newer SMB backend on Synology while keeping the Samba-Manager UI, use the hybrid deployment in [releases/docker/synology/](releases/docker/synology/). It pairs Samba-Manager with `ghcr.io/servercontainers/samba`, includes a non-disruptive macvlan test stack, host-network cutover stack, and rollback scripts.
+
 ## Release Management System
 
 Samba Manager includes a comprehensive release management system with automated tools:
