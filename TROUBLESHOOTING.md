@@ -10,12 +10,12 @@
    - Confirm the backend container name is `samba-backend`
 
 2. **Test stack is unreachable from other clients:**
-   - Re-check the macvlan parent interface and test IP values in `/home/runner/work/Samba-Manager/Samba-Manager/releases/docker/synology/.env`
+   - Re-check the macvlan parent interface and test IP values in `releases/docker/synology/.env`
    - Make sure the chosen test IP is unused on your LAN
    - Confirm `interfaces = ${SAMBA_TEST_IP}/24` matches the assigned address
 
 3. **Backend rewrites smb.conf on container recreation:**
-   - Keep `/home/runner/work/Samba-Manager/Samba-Manager/releases/docker/synology/servercontainers-entrypoint.sh` mounted as shown in the compose files
+   - Keep `releases/docker/synology/servercontainers-entrypoint.sh` mounted as shown in the compose files
    - Verify `/etc/samba/smb.conf` exists in the shared config path before recreating the backend container
 
 4. **macOS Finder is still slow or missing metadata support:**
