@@ -24,14 +24,7 @@ else:
 
 EXTERNAL_SAMBA_RESTART_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_RESTART_CMD", "").strip()
 EXTERNAL_SAMBA_STATUS_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_STATUS_CMD", "").strip()
-ALLOWED_EXTERNAL_COMMANDS = {
-    "curl",
-    "/usr/bin/curl",
-    "/bin/curl",
-    "docker",
-    "/usr/bin/docker",
-    "/usr/local/bin/docker",
-}
+DOCKER_SOCKET_PATHS = {"/var/run/docker.sock"}
 
 
 def parse_share_section(content):
@@ -198,19 +191,30 @@ def run_configured_command(command):
         argv = shlex.split(command)
         if not argv:
             return False, "", "Configured command is empty"
-        if argv[0] not in ALLOWED_EXTERNAL_COMMANDS:
+        if argv[0] not in {"curl", "/usr/bin/curl", "/bin/curl"}:
             return (
                 False,
                 "",
                 f"Configured command '{argv[0]}' is not allowed",
             )
+        if "--unix-socket" not in argv:
+            return False, "", "Configured curl command must use --unix-socket"
+        socket_index = argv.index("--unix-socket") + 1
+        if socket_index >= len(argv) or argv[socket_index] not in DOCKER_SOCKET_PATHS:
+            return False, "", "Configured curl command must target /var/run/docker.sock"
+        urls = [arg for arg in argv if arg.startswith("http://") or arg.startswith("https://")]
+        if not urls or not all(url.startswith("http://localhost/containers/") for url in urls):
+            return False, "", "Configured curl command must target the local Docker containers API"
         result = subprocess.run(
             argv,
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
         return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, "", "Configured command timed out"
     except Exception as e:
         return False, "", str(e)
 
