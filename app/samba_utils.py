@@ -24,6 +24,14 @@ else:
 
 EXTERNAL_SAMBA_RESTART_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_RESTART_CMD", "").strip()
 EXTERNAL_SAMBA_STATUS_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_STATUS_CMD", "").strip()
+ALLOWED_EXTERNAL_COMMANDS = {
+    "curl",
+    "/usr/bin/curl",
+    "/bin/curl",
+    "docker",
+    "/usr/bin/docker",
+    "/usr/local/bin/docker",
+}
 
 
 def parse_share_section(content):
@@ -187,8 +195,17 @@ def run_command(cmd, input_str=None):
 def run_configured_command(command):
     """Run an administrator-provided command string."""
     try:
+        argv = shlex.split(command)
+        if not argv:
+            return False, "", "Configured command is empty"
+        if argv[0] not in ALLOWED_EXTERNAL_COMMANDS:
+            return (
+                False,
+                "",
+                f"Configured command '{argv[0]}' is not allowed",
+            )
         result = subprocess.run(
-            shlex.split(command),
+            argv,
             capture_output=True,
             text=True,
             check=False,
