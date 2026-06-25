@@ -1,4 +1,5 @@
 import grp
+import json
 import os
 import pwd
 import re
@@ -20,6 +21,9 @@ else:
     SMB_CONF = "/etc/samba/smb.conf"
     SHARE_CONF = "/etc/samba/shares.conf"
     ACTUAL_SMB_CONF = SMB_CONF
+
+EXTERNAL_SAMBA_RESTART_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_RESTART_CMD", "").strip()
+EXTERNAL_SAMBA_STATUS_CMD = os.environ.get("SAMBA_MANAGER_SAMBA_STATUS_CMD", "").strip()
 
 
 def parse_share_section(content):
@@ -180,9 +184,60 @@ def run_command(cmd, input_str=None):
         return False, str(e)
 
 
+def run_configured_command(command):
+    """Run an administrator-provided command string."""
+    try:
+        result = subprocess.run(
+            shlex.split(command),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
+    except Exception as e:
+        return False, "", str(e)
+
+
+def parse_external_status(stdout, success):
+    """Interpret stdout from an external status command."""
+    if not stdout:
+        return "active" if success else "inactive"
+
+    try:
+        data = json.loads(stdout)
+        if isinstance(data, dict):
+            state = data.get("State", {})
+            if isinstance(state, dict):
+                if isinstance(state.get("Running"), bool):
+                    return "active" if state["Running"] else "inactive"
+                status = state.get("Status")
+                if isinstance(status, str) and status:
+                    return status
+    except json.JSONDecodeError:
+        pass
+
+    normalized = stdout.lower()
+    if "running" in normalized or "active" in normalized:
+        return "active"
+    if "stopped" in normalized or "inactive" in normalized or "exited" in normalized:
+        return "inactive"
+    return "active" if success else "inactive"
+
+
 def restart_samba_service():
     """Restart Samba service with proper error handling"""
     try:
+        if EXTERNAL_SAMBA_RESTART_CMD:
+            print("Attempting to reload externally managed Samba service")
+            success, stdout, stderr = run_configured_command(EXTERNAL_SAMBA_RESTART_CMD)
+            if success:
+                print("Successfully reloaded externally managed Samba service")
+                if stdout:
+                    print(stdout)
+                return True
+            print(f"External Samba reload command failed: {stderr or stdout}")
+            return False
+
         # First try systemctl
         print("Attempting to restart Samba services with systemctl")
         systemctl_cmd = ["sudo", "systemctl", "restart", "smbd.service", "nmbd.service"]
@@ -233,6 +288,13 @@ def get_samba_status():
     """Get the status of the Samba service"""
     if DEV_MODE:
         return {"smbd": "active (dev)", "nmbd": "active (dev)"}
+    if EXTERNAL_SAMBA_STATUS_CMD:
+        success, stdout, stderr = run_configured_command(EXTERNAL_SAMBA_STATUS_CMD)
+        status = parse_external_status(stdout, success)
+        if not success and stderr:
+            print(f"External Samba status command failed: {stderr}")
+        label = f"external ({status})"
+        return {"smbd": label, "nmbd": "external"}
     try:
         # Try systemctl first (for systemd systems)
         smbd = subprocess.run(
